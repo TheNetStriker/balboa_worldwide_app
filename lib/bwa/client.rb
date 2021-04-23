@@ -109,7 +109,12 @@ module BWA
 
     def set_pump(i, desired)
       return unless last_status && last_control_configuration2
-      times = (desired - last_status.pumps[i - 1]) % (last_control_configuration2.pumps[i - 1] + 1)
+      if last_control_configuration2.pumps[i - 1] == 1
+        # If the pump has only one speed setting it will send 0 or 2
+        times = desired != last_status.pumps[i - 1] - 1 ? 1 : 0
+      else
+        times = (desired - last_status.pumps[i - 1]) % (last_control_configuration2.pumps[i - 1] + 1)
+      end
       times.times do
         toggle_pump(i)
         sleep(0.1)
@@ -134,7 +139,7 @@ module BWA
 
     def set_blower(desired)
       return unless last_status && last_control_configuration2
-      times = (desired - last_status.blower) % (last_control_configuration2.blower + 1)
+      times = (desired - (last_status.blower ? 1 : 0)) % (last_control_configuration2.blower + 1)
       times.times do
         toggle_blower
         sleep(0.1)

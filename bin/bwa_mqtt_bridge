@@ -42,7 +42,7 @@ class MQTTBridge
               publish_thing("aux", i + 1) if exists
             end
             publish_mister if message.mister
-            publish_blower(message.blower) if message.blower != 0
+            publish_blower() if message.blower != 0
             publish_circpump if message.circ_pump
             publish("$state", "ready")
           when BWA::Messages::Status
@@ -84,7 +84,9 @@ class MQTTBridge
             publish_attribute("spa/blower", message.blower) if @bwa.last_control_configuration2&.blower.to_i != 0
             publish_attribute("spa/mister", message.mister) if @bwa.last_control_configuration2&.mister
             (0..5).each do |i|
-              publish_attribute("spa/pump#{i + 1}", message.pumps[i]) if @bwa.last_control_configuration2&.pumps&.[](i).to_i != 0
+              # If the pump has only one speed setting it will send 0 or 2, we translate that to a boolean
+              publish_attribute("spa/pump#{i + 1}", message.pumps[i] == 2 ? "true" : "false") if @bwa.last_control_configuration2&.pumps&.[](i).to_i == 1
+              publish_attribute("spa/pump#{i + 1}", message.pumps[i]) if @bwa.last_control_configuration2&.pumps&.[](i).to_i > 1
             end
             (0..1).each do |i|
               publish_attribute("spa/light#{i + 1}", message.lights[i]) if @bwa.last_control_configuration2&.lights&.[](i)
@@ -120,7 +122,9 @@ class MQTTBridge
         @bwa.set_temperature_range(value.to_sym)
       when %r{^spa/pump([1-6])/set$}
         next @bwa.toggle_pump($1.to_i) if value == 'toggle'
-        @bwa.set_pump($1.to_i, value.to_i)
+        # If we only have one speed setting the item is a boolean
+        @bwa.set_pump($1.to_i, value == "true" ? 1 : 0) if @bwa.last_control_configuration2&.pumps&.[]($1.to_i - 1).to_i == 1
+        @bwa.set_pump($1.to_i, value.to_i) if @bwa.last_control_configuration2&.pumps&.[]($1.to_i - 1).to_i > 1
       when %r{^spa/(light|aux)([12])/set$}
         next @bwa.send(:"toggle_#{$1}", $2.to_i) if value == 'toggle'
         next unless %w{true false}.include?(value)
@@ -131,7 +135,7 @@ class MQTTBridge
         @bwa.set_mister(value == 'true')
       when "spa/blower/set"
         next @bwa.toggle_blower if value == 'toggle'
-        @bwa.set_blower(value.to_i)
+        @bwa.set_blower(value == "true" ? 1 : 0)
       when "spa/settemperature/set"
         @bwa.set_temperature(value.to_f)
       end
@@ -209,8 +213,13 @@ class MQTTBridge
 
   def publish_pump(i, speeds)
     publish("spa/pump#{i}/$name", "Pump #{i} speed")
-    publish("spa/pump#{i}/$datatype", "integer")
-    publish("spa/pump#{i}/$format", "0:#{speeds}")
+    if speeds == 1
+      # If we only have one speed setting the item is a boolean
+      publish("spa/pump#{i}/$datatype", "boolean")
+    else
+      publish("spa/pump#{i}/$datatype", "integer")
+      publish("spa/pump#{i}/$format", "0:#{speeds}")
+    end
     publish("spa/pump#{i}/$settable", "true")
     subscribe("spa/pump#{i}/set")
 
@@ -238,10 +247,9 @@ class MQTTBridge
     publish_nodes
   end
 
-  def publish_blower(speeds)
-    publish("spa/blower/$name", "Blower speed")
-    publish("spa/blower/$datatype", "integer")
-    publish("spa/blower/$format", "0:#{speeds}")
+  def publish_blower()
+    publish("spa/blower/$name", "Blower")
+    publish("spa/blower/$datatype", "boolean")
     publish("spa/blower/$settable", "true")
     subscribe("spa/blower/set")
 
